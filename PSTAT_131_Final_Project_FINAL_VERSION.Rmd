@@ -1,0 +1,769 @@
+---
+title: "PSTAT 131 Final Project"
+author: "Lila He (Chenhui He), Hanzhi Zhang, Amy Gu"
+date: "2022/3/2"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+    code_folding: hide
+    number_sections: no
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+```
+
+# Introduction
+```{r, eval=TRUE}
+knitr::include_graphics("League of Legends.png")
+```
+
+League of Legends is a popular Multiplayer online battle arena (MOBA) game in the world. It is about to be listed as one of the events in The 19th Asian Games Hangzhou 2022. This dataset is from Riot Gaming in Diamond I to the Master Rank Game of League of Legends. In order to see what decisions in the first ten minutes will lead a team to win the game, we are trying to fit a model to predict how various factors will affect the result of a ranked game. We may use Logistic Regression, K nearest neighbor, bagging, randomForest, and boosted tree to analyze this dataset.
+
+## What is League of legends? ## 
+
+League of Legends is a team-based strategy game where two teams of five powerful champions face off to destroy the other’s base. Choose from over 140 champions to make epic plays, secure kills, and take down towers as you battle your way to victory.
+
+**Goal: Destroy The Base**
+
+The Nexus is the heart of both teams’ bases. Destroy the enemy’s Nexus first to win the game.
+
+**Structures: Clear the Path**
+
+Your team needs to clear at least one lane to get to the enemy Nexus. Blocking your path are defense structures called turrets and inhibitors. Each lane has three turrets and one inhibitor, and each Nexus is guarded by two turrets.
+
+**Neutral Monsters: Take On The Jungle**
+
+In between the lanes is the jungle, where neutral monsters and jungle plants reside. The two most important monsters are Baron Nashor and the Drakes. Killing these units grants unique buffs for your team and can also turn the tide of the game.
+
+**Lane Positions: Choose Your Lane**
+
+There are five positions that make up the recommended team comp for the game. Each lane lends itself to certain kinds of champions and roles—try them all or lock in to the lane that calls you.
+
+**Powering Up: Power Up Your Champ**
+
+Champions get stronger by earning experience to level up and gold to buy more powerful items as the game progresses. Staying on top of these two factors is crucial to overpowering the enemy team and destroying their base.
+
+**Abilities, Spells  & Items: Unlock Your Abilities**
+
+Champions have five core abilities, two special spells, and up to seven items at a time. Figuring out the optimal ability order, summoner spells, and item build for your champion will help you succeed as a team.
+
+From League of Legends Official Website: [https://www.leagueoflegends.com/en-us/how-to-play/]
+
+For detailed introduction, please watch this short video:
+```{r video, message = FALSE}
+library(vembedr)
+embed_youtube("BGtROJeMPeE")
+```
+
+## Goal of this study
+
+Since players will meet different enemies and teammates in diamond rank, the situation of the game may be different from the lower rank games. The goal of this study is to help the players in diamond rank games to learn about which decisions in the first ten minutes have an impact on winning a ranked game from this model.
+
+## Loading Data and Packages
+
+**Loading Data**
+
+Since we are interested in the video game League of Legends, we searched on the website Kaggle. By sorting through the usability, we finally choose this dataset. [https://www.kaggle.com/bobbyscience/league-of-legends-diamond-ranked-games-10-min]
+
+
+```{r loading, class.source = 'fold-show'}
+# read in the data
+RankData <- read.csv("high_diamond_ranked_10min.csv")
+```
+
+**Check the dimension**
+```{r dimension, class.source = 'fold-show'}
+dimension <- dim(RankData)
+dimension
+```
+This dataset includes 40 columns and 9879 observations. There are 1 response variable and 38 predictor variables. And 36 of them are numeric and 2 of them are binary. The response variable is the ‘blueWins’. It is the result whether the blue side wins ("1" stands for blue wins and "0" stands for red wins). The description of explanation for predictor variables are in our codebook document.  
+
+**Loading Packages**
+
+We loaded fallowing packages: tidyverse, ForImp, dplyr, randomForest, gbm, ISLR, tree, class, corrplot, ROCR, readr, caret, factoextra
+
+```{r loading packages, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(ForImp)
+library(dplyr)
+library(randomForest)
+library(gbm)
+library(ISLR)
+library(tree)
+library(class)
+library(corrplot)
+library(ROCR)
+library(readr)
+library(caret)
+library(factoextra)
+```
+
+# Data Cleaning
+
+**Exclude gameID column**
+
+One of the variables is the "gameID". Since the "gameID" is just a kind of identity and it won't influence the result of each rank game, we excluded the "gameID" column.
+
+```{r cleaning 1, class.source = 'fold-show'}
+RData <- RankData %>% 
+  select(-gameId)
+```
+
+Then, we move blueWins to the first column.
+
+```{r blueWins, class.source = 'fold-show'}
+blueWins = RData[,1]
+```
+
+**Select important variables**
+
+For the variables end with "PerMin" come from total variables like blueGoldPerMin, it is from the blueTotalGold. At the same time, variable blueKills is equal to the redDeaths. The variables "redGoldDiff" and "redExperienceDiff" come from blueTotalGold minus blueGoldDiff, blueTotalExperience minus blueExperienceDiff. Since "FirstBlood" variable is a binary variable, it will be done by red team or blue team, we only keep one. 
+
+We exclude the following variables: blueCSPerMin, redCSPerMin, blueGoldPerMin, redGoldPerMin, redDeaths, redFirstBlood, blueDeaths, redGoldDiff, redExperienceDiff
+
+```{r important variable, class.source = 'fold-show'}
+blueData = RData %>% 
+  select(-blueCSPerMin, -redCSPerMin, -blueGoldPerMin, -redGoldPerMin, -redDeaths, -redFirstBlood, -blueDeaths, -redGoldDiff, -redExperienceDiff)
+```
+
+**Check missing value**
+```{r missing value, class.source = 'fold-show'}
+sum(is.na(blueData))
+```
+
+After checking, we see that there is no missing value in our dataset now. We finished our data cleaning process.
+
+# Exploratory Data Analysis
+
+## Summary the data ##
+
+In order to get more descriptive characters of the data set, we summary the data.
+
+From the summary, we can see that the mean of blueWins is 0.499, therefore we can assume the game is fair.
+
+We also find some funny numbers that the Max for redTowersDestroyed is 2 and Max for blueTowersDestroyed is 4. If TowersDestroyed is doubled for blue team, there must be something else that help red team to make up for its lack of destroyed tower or TowersDestroyed is not highly correlated with the result of wins.
+
+```{r summary, class.source = 'fold-show'}
+summary(blueData)
+```
+
+## Win Rate When Has a Gold Advantage ##
+
+Based on the observations of summary, we found that Gold Difference has large impact on the win rate of both teams. We decided to make a graph to show the win rate if a team has gained a gold advantage during first 10 mins of a rank game. In the plot, we could see that blue team had about 70% win rate when get gold advantage, which is a positive gold difference. The red team also had about 70% win rate when get gold advantage. So, both teams has the same win rate when get gold advantage. 
+
+```{r winrateplot}
+red_wins <- nrow(blueData[blueData$blueWins == "0",])
+blue_wins <- nrow(blueData[blueData$blueWins == "1",])
+blue_wins_ga <- filter(blueData, blueGoldDiff > 0 & blueWins == "1")
+blue_wins_gd <- filter(blueData, blueGoldDiff < 0 & blueWins == "1")
+red_wins_ga <- filter(blueData, blueGoldDiff > 0 & blueWins == "0")
+red_wins_gd <- filter(blueData, blueGoldDiff < 0 & blueWins == "0")
+prob_blue_wins_ga <- round((length(blue_wins_ga[,1]))/blue_wins, digits = 2)
+prob_blue_wins_gd <- round((length(blue_wins_gd[,1]))/blue_wins, digits = 2)
+prob_red_wins_ga <- round((length(red_wins_ga[,1]))/red_wins, digits = 2)
+prob_red_wins_gd <- round((length(red_wins_gd[,1]))/red_wins, digits = 2)
+prob_blue_wins_gold <- c(prob_blue_wins_ga, prob_blue_wins_gd)
+prob_red_wins_gold <- c(prob_red_wins_ga, prob_red_wins_gd)
+barplot(prob_blue_wins_gold, main = "Blue win When Blue Has Gold Advantage",
+        xlab = "Win", ylab = "Probability",
+        col = c("blue", "red"))
+barplot(prob_red_wins_gold, main = "Red win When Blue Has Gold Advantage",
+        xlab = "Win", ylab = "Probability",
+        col = c("blue", "red"))
+```
+
+## Fairness ##
+
+In order to make sure that the game is fair for two teams, we compared the probability to win this ranked game of each team.
+
+```{r probability}
+red_wins <- nrow(blueData[blueData$blueWins == "0",])
+blue_wins <- nrow(blueData[blueData$blueWins == "1",])
+prob_red_wins <- round((nrow(blueData[blueData$blueWins == "0",])) / length(blueData[,1]), digits = 2)
+prob_blue_wins <-  round((nrow(blueData[blueData$blueWins == "1",])) / length(blueData[,1]), digits = 2)
+prob_wins <- c(prob_red_wins, prob_blue_wins)
+barplot(prob_wins, main = "The probability to win this ranked game of each team",
+        xlab = "Team", ylab = "Probability",
+        col = c("red", "blue"))
+```
+
+
+After checking the probability, we found that both teams have 50% probability to win the game. So the game is fair.
+
+## Correlation 1##
+
+By using a heat map to represent the correlation matrix between the variables, we can better understand the structure of the dataset. We don't want two variables which are highly correlated exist at the same time because that's meaningless.
+
+The color blue indicates whether the variables are positively correlated, the color red indicates the variables are negatively correlated, and white indicates that they are not correlated.
+
+```{r Correlation}
+CorrMatrix<-cor(blueData%>%select(-1))
+corrplot(CorrMatrix,method = "color",type = "full", addCoef.col = "black", order = "hclust", tl.cex = 0.45,number.cex = 0.35)
+```
+
+First, we want to introduce this heat map. From this graph,there are 2 key discoverys:
+
+First, The variables associated with the red team are negatively correlated with the variables associated with the blue team.For example,redTotalGold is negatively correlated with blueExperienceDiff and blueGoldDiff. 
+
+Second, the darker the colors are, the more correlations between these variables. We found some variables are more correlated with some variables than any other. For example, blueGoldDiff and blueExperienceDiff are more negatively correlated with redAvgLevel and redTotalExperience. 
+
+
+We have the variables associated with the red team like redKills, redAssists, redTotalGold etc.
+We have the variables associated with the blue team like  blueKills, blueAssists, blueTotalGold etc.
+Also, we have the variables that are not really correlated with anything, like redWardsPlaced, redWardDestroyed, etc.
+
+
+## PCA ##
+
+When we have too many variables, we need to use PCA to reach dimensionality reduction of the data and compress the variables into fewer sets
+
+**PVE Value**
+
+```{r PVE plot, class.source = 'fold-show'}
+pr.out = prcomp(blueData%>%select(-1), scale = TRUE)
+pve = pr.out$sdev^2 / sum(pr.out$sdev^2)
+pve
+```
+
+**PVE and Cumulative PVE Plot**
+
+```{r PVE Plot}
+par(mfrow = c(1,2))
+plot(pve,xlab="Principal Component",
+     ylab="Proportion of Variance Explained ", ylim=c(0,1),type='l')
+plot(cumsum(pve), xlab="Principal Component ",
+     ylab=" Cumulative PVE", type = "l")
+```
+
+**PCA Plot**
+
+``` {r PCA plot, warning=FALSE}
+fviz_pca_var(pr.out,
+             col.var = "contrib", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE)
+```
+
+We find that the most principal component can explain nearly 30% variance and nearly top 10 components can reach 80% variance explanation which means can cover most information of the original 30 variance. That's interesting. 
+
+## Corrlation 2 ##
+
+Because we focus on the factors that will lead a team to win in the first 10 minutes, it's a binary question and in order to investigate more in-depth the link between the variables, We only consider the variables related with the blue team (such as blueKills, blueTotalGold, etc.). We also remove the variables which are highly correlated. 
+
+For instance, blueEliteMonsters is highly correlated with blueDragons.(Since the refresh time of elite monsters is eariler than dragons, players can gain more gold and experience from killing elite monsters, which help them to have higher attack when killing the dragon.)
+
+Also, blueAvgLevel is highly correlated with blueTotalExperience, (it's easy to understand, right? When you practice more, which means you have more experience, usually you can reach a higher level of what you have practiced. We all know, practice makes perfection).
+
+So we choose one of them from blueEliteMonsters and blueDragons. At the same time, we choose one of them from blueTotalExperience and blueAvgLevel. Then we plot correlation matrix using a heatmap to visualize the data.
+
+```{r blue variables, class.source = 'fold-show'}
+BData = blueData %>% select(blueWins:blueExperienceDiff)
+BData = BData %>% select(-blueEliteMonsters, -blueAvgLevel)
+```
+
+From the heat map, we can see that blueGoldDiff is highly positive correlated with blueTotalExperience, blueExperienceDiff, and blueTotalGold. In addition, blueTotalGold is highly positive correlated with blueAssists and blueKills.
+
+```{r correlation plot 2}
+CorrMatrix2<-cor(BData%>%select(-1))
+corrplot(CorrMatrix2,method = "color",type = "full", addCoef.col = "black", order = "hclust", tl.cex = 0.45,number.cex = 0.35)
+```
+
+
+# Data Splitting #
+
+Because we only have one data set, when we finish model building, we want to estimate the generalization performance, so we do data splitting. If we use the same data when we train the model and estimate its performance, then we will get a much more optimistic result when we estimate, there will be a lack of accuracy. And we checked the dimension of them.
+
+```{r Training and test dataset1, class.source = 'fold-show'}
+set.seed(1)
+
+#We take 80% training data and 20% testing data.
+train <- sample(1:nrow(BData), 0.8*nrow(BData))
+
+blueData.train <- BData[train,]
+blueData.test <- BData[-train,]
+
+# dimensions of training dataset
+dim(blueData.train)
+# dimensions of test dataset
+dim(blueData.test)
+```
+
+We take 80% training data and 20% testing data.
+
+There are 7903 observations in the training dataset.
+There are 1976 observations in the test dataset.
+
+
+# Model fitting
+
+## Logistic Regression
+
+We firstly try Logistic Regression by building a model glm.fit, 
+
+This is a train model to find the relationship between blueWins with other variables that affect the win rate of blue team.
+
+**Summary of the Logistic Regression**
+
+```{r logitRegression model, class.source = 'fold-show'}
+glm.fit <- glm(blueWins ~ ., 
+               family = binomial("logit"),
+               data = blueData.train)
+summary(glm.fit)
+```
+
+**Find the probability of training dataset**
+
+We want to predict the classes of blueWins from the sequence of probabilities, so we choose the option type = "response", and then round the probability to two decimals.
+
+```{r probability training1}
+prob.training = round(predict(glm.fit, type = "response"),digits = 2)
+```
+
+**Confusion matrix of training dataset**
+
+Then we construct a confusion matrix through the prediction. We picked threshold = 0.5 to assign labels. The true labels of *prob.training* are "NO", "YES", which are accessible in the data set.
+
+```{r Confusion matrix of training}
+# Save the predicted labels using 0.5 as a threshold
+blueData.train1 = blueData.train %>%
+  mutate(predBLUEWINS=as.factor(ifelse(prob.training<=0.5, "No", "Yes")))
+# Confusion matrix (training error/accuracy)
+table(pred=blueData.train1$predBLUEWINS,
+      true=blueData.train1$blueWins)
+
+```
+
+Out of 7903 games, the model classifies 2977 + 2801 = 5778 correctly, which is 72.96%
+Out of 4009 lost games, the model classifies 2977 correctly, which is 73.67%
+Out of 3894 win games, the model classifies 2801 correctly, which is 71.93%
+Now we have finished the training phrase.
+
+```{r Accuracy, class.source = 'fold-show'}
+calc_error_rate <- function(predicted.value, true.value){
+return(mean(true.value!=predicted.value))
+}
+
+#Training Error
+pred.train = predict(glm.fit, newdata = blueData.train1, type = "response")
+pred.train <- ifelse(pred.train > .5, 1, 0)
+calc_error_rate(pred.train, blueData.train1$blueWins)
+
+# Accurate rate for training dataset
+AR.train <- 1 - calc_error_rate(pred.train, blueData.train1$blueWins)
+AR.train
+
+# For lose game, the correct classified rate is
+lostR <- 2977 / (2948 + 1093)
+lostR
+
+# For win game, the correct classified rate is
+winR <- 2801 / (2801 + 1093)
+winR
+```
+
+Similar to the training data set, we want to predict classes of blueWins in test data set. We try to make prediction of the probability and round it to two decimal. Save the predicted labels in 0.5 threshold.
+
+```{r probability of test1}
+#Similar with training part
+prob.test <- round(predict(glm.fit, blueData.test, type = "response"), digits = 2)
+
+blueData.test1 <- blueData.test %>%
+  mutate(winRate=prob.test)
+
+blueData.test1 <- blueData.test1 %>%
+  mutate(predBLUEWINS=as.factor(ifelse(prob.test<=0.5, "No", "Yes")))
+```
+
+We construct confusion matrix for test set.
+
+```{r Confusion matrix1}
+# confusion matrix (test error)
+table(pred=blueData.test1$predBLUEWINS, true=blueData.test1$blueWins)
+```
+
+Then calculate the test error rate, which is 0.2632.
+Out of 1976 games, the model classifies 1451 correctly, which is 73.68%
+
+```{r test error1, class.source = 'fold-show'}
+#Test Error
+pred.test = predict(glm.fit, newdata = blueData.test1, type = "response")
+pred.test <- ifelse(pred.test > .5, 1, 0)
+calc_error_rate(pred.test, blueData.test1$blueWins)
+
+#Accurate rate for test dataset
+AR.test <- 1 - calc_error_rate(pred.test, blueData.test$blueWins)
+AR.test
+```
+
+**ROC plot**
+
+To show sensitivity and specificity indicators corresponding to this model at different probability demarcation points, we create an object "pred", using the predicted probabilities of the training level and the actual classification of the training level, and then put it inside the performance function.
+
+Often we use the area under the curve（AUC）to summarize the overall performance of a model. Higher AUC is better. We can use performance() again to compute AUC and we get 0.8111254.
+
+```{r ROC plot}
+pred = prediction(prob.training, blueData.train1$blueWins)
+
+# We want TPR on the y axis and FPR on the x axis
+perf = performance(pred, measure="tpr", x.measure="fpr")
+
+plot(perf, col=2, lwd=3, main="ROC curve")
+abline(0,1)
+```
+
+**AUC**
+
+```{r AUC, class.source = 'fold-show'}
+auc = performance(pred, "auc")@y.values
+auc
+```
+
+
+## K-Nearest Neighbor Method
+
+To prepare, we split our data again and we use the same test data to compare different models. (Why we use the same test data: When different models face the same situation, which means the same unknown data, how they perform and how high their prediction accuracy are will represent how successful the model is)
+
+```{r Training and test dataset2}
+set.seed(1)
+
+#We take 80% training data and 20% testing data.
+train <- sample(1:nrow(blueData), 0.8*nrow(blueData))
+
+blueData.train <- BData[train,]
+blueData.test <- BData[-train,]
+```
+
+YTrain is the true labels for blueWins on the training set
+XTrain is the standardized design matrix
+We normalized X by using "scale"
+
+```{r XYTrain, class.source = 'fold-show'}
+YTrain = blueData.train$blueWins
+XTrain = blueData.train %>% select(-blueWins) %>% scale(center = TRUE, scale = TRUE)
+```
+
+We do the same process with test level. YTest is the true labels for blueWins on the test set, and Xtest is the design matrix.
+
+```{r XYTest, class.source = 'fold-show'}
+YTest = blueData.test$blueWins
+XTest = blueData.test %>% select(-blueWins) %>% scale(center = TRUE, scale = TRUE)
+```
+
+Note that we set a random seed before applying sample() to ensure reproducibility.
+We set K in a range from 1 to 50, then construct the cross validation.
+
+This approach involves randomly dividing the set of observations into k groups, or folds, of approximately equal size. In other word, the training sample is divided into N pieces, and when k is equal to 1, we first train the model in four of them, and then test the model in the remaining one. That way, when K is equal to 1, we can train the model five times, we can get five results, and then we can get an average, which is a stable result. And then k is 2,3,4... The results of 50 were compared.
+
+For classification problems, the error rate, $Err_k$ is computed on the observations in the $k^{th}$ hold-out fold, and the CV process yield $Err_1$, $Err_2$, ..., $Err_k$.
+Then the k-fold CV error rate takes the form：
+$CV_{(k)} = \frac{1}{k}\sum_{i=1}^{k},$ where $Err_i = I_{(y_i \neq \hat{y_i})}$
+
+We use LOOCV to find the validation error, then tried to find the best nearest neigbor through all 1 to 50 validation errors.
+
+```{r knnValidationError, echo = FALSE}
+validation.error = NULL
+allK = 1:50
+set.seed(1)
+for (i in allK){ 
+  pred.Yval = knn.cv(train=XTrain, cl=YTrain, k=i) 
+# Loop through different number of neighbors
+# Predict on the left-out validation set
+  validation.error = c(validation.error, mean(pred.Yval!=YTrain)) 
+}
+# Validation error for 1-NN, 2-NN, ..., 50-NN
+plot(allK, validation.error, type = "l", xlab = "k")
+```
+
+We want to find the best knn, and it is 44 for our dataset. We can also see this result from the plot above.
+
+```{r KnnBestK, class.source = 'fold-show'}
+numneighbor = max(allK[validation.error == min(validation.error)])
+numneighbor
+```
+
+**Calculate training error rate**
+
+In order to get the training error, we have to train the kNN classifier on
+the training set and predict blueWins on the same training set, then we can construct the confusion matrix with k = 44(best K-nn we just gain) to get the training error rate.
+
+```{r train the classifier and prediction}
+set.seed(1)
+pred.YTtrain = knn(train=XTrain, test=XTrain, cl=YTrain, k=44,
+                   prob = T)
+```
+
+Here is the confusion matrix for training data set.
+
+```{r confusion matrix2}
+conf.train = table(predicted=pred.YTtrain, true=YTrain)
+conf.train
+```
+We get training error rate is 0.2671.
+```{r Training error rate2, class.source = 'fold-show'}
+1 - sum(diag(conf.train)/sum(conf.train))
+```
+
+**Calculate test error rate**
+
+To get the test error, we have to train the k-NN classifier on the
+training set and predict blueWins on the test set, then again we can construct the confusion matrix to get the test error rate.
+
+```{r train the classifier }
+pred.YTest = knn(train=XTrain, test=XTest, cl=YTrain, k=44)
+```
+
+Here is the confusion matrix for test data set.
+
+```{r confusion matrix3}
+conf.test = table(predicted=pred.YTest, true=YTest)
+conf.test
+```
+We get test error rate is 0.2834.
+
+```{r test error rate2, class.source = 'fold-show'}
+1 - sum(diag(conf.test)/sum(conf.test))
+```
+
+## Random Forest and Bagging ##
+
+In this section, we applied both random forest model and bagging model to our data set. Since bagging is a special case of random forest, we put two models in the same section.
+
+```{r Training and test dataset3}
+set.seed(1)
+
+#We take 80% training data and 20% testing data.
+train <- sample(1:nrow(blueData), 0.8*nrow(blueData))
+
+blueData.train <- BData[train,]
+blueData.test <- BData[-train,]
+```
+
+**Random Forest**
+
+We perform random forest model by using randomForest() function in our selected training set. Since our research goal is a classification question, we set blueWins to a factor. Also, we try to set different *mtry* value to find the smallest OOB for accuracy. We have set *mtry* from 2:5 to check OOB and find that *mtry* = 4 is the best value for our data set. This also match that using $\sqrt{p} = \sqrt{15} = 3.87298 \approx 4$ variables when building a random forest of classification trees. The OOB we get is 0.2794. And the confusion matrix of the training data set is as followed.
+
+```{r fit model, class.source = 'fold-show'}
+set.seed(1)
+fit.rf<-randomForest(as.factor(blueWins) ~ .,
+                     data=blueData.train, 
+                     mtry=4, 
+                     ntree=500, 
+                     nodesize=5,
+                     importance=TRUE)
+fit.rf
+```
+
+By observing the OOB line in the plot, we can see a decreasing trend and approach to 0.28 with the increase of ntree value. As a result, we know that our ntree value choose is good to our random forest model.
+
+```{r rfPlots}
+plot(fit.rf)
+legend("top", 
+       legend = colnames(fit.rf$err.rate),
+       lty = 1:3,
+       col = 1:3,
+       horiz = T)
+
+```
+
+We can view the level of importance for each variable in the following two steps.
+Through the data and the plot, it is obvious that blueGoldDiff and blueExperienceDiff are two most important factors help blue team to win.
+
+```{r importance, class.source = 'fold-show'}
+importance(fit.rf)
+```
+
+```{r importance_plot}
+varImpPlot(fit.rf,main='feature important')
+```
+
+Here is the confusion matrix for test data set.
+
+```{r Confusion matrix4, class.source = 'fold-show'}
+pred<-predict(fit.rf,blueData.test)
+rf.err = table(pred = pred, truth = blueData.test$blueWins)
+rf.err
+test.rf.err = 1 - sum(diag(rf.err))/sum(rf.err)
+test.rf.err
+```
+
+The test error rate is 0.2794.
+
+**Bagging**
+
+We do data splitting again for a new bagging model.
+
+```{r Training and test dataset4}
+set.seed(1)
+
+#We take 80% training data and 20% testing data.
+train <- sample(1:nrow(blueData), 0.8*nrow(blueData))
+
+blueData.train <- BData[train,]
+blueData.test <- BData[-train,]
+```
+
+Check the structure of above data frame we just created
+
+```{r}
+# glimpse(blueData.train)
+# str(blueData.train)
+```
+
+Here, we again set blueWins to a factor. Then, we choose *mtry* = 14 which indicates the remaining 14 predictors should be considered for each split of the tree. We used randomForest() to perform the bagging model. The confusion matrix of the training data set is as followed.
+
+```{r baggingFit, class.source = 'fold-show'}
+blueData.train$blueWins <- as.character(blueData.train$blueWins)
+blueData.train$blueWins <- as.factor(blueData.train$blueWins)
+
+bag.rank <- randomForest(blueWins~., 
+                         data = blueData.train, 
+                         mtry=14,
+                         importance = TRUE)
+bag.rank
+```
+
+The OOB line decreases as the ntree value increases, which approach to 0.29 when the line become stable. It is the same OOB error rate we get in the bagging model above.
+
+```{r baggingPlot}
+plot(bag.rank)
+legend("top", 
+       colnames(bag.rank$err.rate),
+       col = 1:3,
+       cex = 0.8, 
+       fill = 1:3)
+```
+
+We want to know how well does this bagged model perform on the test set. So, we create a confusion matrix and calculate the test error rate through it. The test error rate we get is about 0.2804.
+
+```{r confusion matrix5, class.source = 'fold-show'}
+yhat.bag <- predict(bag.rank, newdata = blueData.test)
+bag.err <- table(pred=yhat.bag, truth=blueData.test$blueWins)
+bag.err
+test.bag.err <- 1- sum(diag(bag.err))/sum(bag.err)
+test.bag.err
+```
+
+## Boosted tree ##
+
+We do data splitting again for a new boosted tree model.
+
+```{r Training and test dataset5}
+set.seed(1)
+
+#We take 80% training data and 20% testing data.
+train <- sample(1:nrow(blueData), 0.8*nrow(blueData))
+
+blueData.train <- BData[train,]
+blueData.test <- BData[-train,]
+```
+
+When we perform the boosted tree, we use gbm() with the option distribution="bernoulli" to fit our classification problem. We use the option interaction.depth=4 limits the depth of each tree to 4.
+
+```{r boostFit, class.source = 'fold-show'}
+set.seed(1)
+boost.blueData = gbm(blueWins ~., 
+                     data=blueData.train,
+                     distribution="bernoulli", 
+                     n.trees=500, 
+                     interaction.depth=4)
+```
+
+By using the summary() function, we produces a relative influence plot and outputs the relative influence statistics. Again, it is obvious to see that blueGoldDiff and blueExperienceDiff are two most important factors when we observe the relative influence plot and statistics. Since they are important, we want to pull them out to create individual partial dependence plots for them.
+
+```{r Summary}
+varimp_gbm <- summary(boost.blueData)
+varimp_gbm
+varimp_gbm %>%
+  arrange(rel.inf) %>%
+  mutate(var = as_factor(var)) %>%
+  ggplot(aes(x = rel.inf, y = var)) +
+  geom_col(fill = "blue") +
+  labs(x = "", y = "") +
+  theme_bw()
+```
+
+This is the partial dependence plot for blueGoldDiff. As shown in the plot, the line increases greatly in the range of -5000 to 5000, which is the range that gold difference change win rate of blue team the most. 
+
+```{r blueGoldDiff}
+plot(boost.blueData, i="blueGoldDiff")
+```
+
+This is the partial dependence plot for blueExperienceDiff. Similar to the previous plot, it also influence the win rate of blue team the most in the range of -5000 to 5000.
+
+```{r blueExperienceDiff}
+plot(boost.blueData, i="blueExperienceDiff")
+```
+
+We then predict blueWins on the test data set through the boosted model. We create the confusion matrix first and then calculate the test error rate. The test error rate is about 0.3041.
+
+```{r Confusion matrix6, class.source = 'fold-show'}
+yhat.boost = predict(boost.blueData, 
+                     newdata = blueData.test, 
+                     n.trees=500)
+pred1=as.factor(ifelse(yhat.boost>=0.5,1,0))
+boost.err = table(pred = pred1, truth = blueData.test$blueWins)
+boost.err
+test.boost.err = 1 - sum(diag(boost.err))/sum(boost.err)
+test.boost.err
+```
+
+
+# Conclusion #
+
+## Summary ##
+
+This study has furthered the understanding of which are the most important factors influence the win rate of a team in the first 10 minutes League of Legends rank game. After scanning the overall data, we removed the superficial unrelated variable (gameID) and some overlap high-correlated variables. In EDA part, we tried to see the whole pattern of the dataset and gave a prediction of which are the most important factors, then proved our prediction in the following model fitting. Each time we used a new model, we do the data splitting to separate data into a training set and a test set.
+
+## Best Model ##
+
+After processing all of the models to our data set, we can choose the best model by comparing the test error rates of each model. So, we create a table to make a clear comparison.
+
+|     Method/Model    | Test Error Rate |
+| :------------------ | --------------: |
+| Logistic Regression |    0.2631579    |
+|         KNN         |    0.2834008    |
+|    Random Forest    |    0.2692308    |
+|       Bagging       |    0.2803644    |
+|    Boosted tree     |    0.3041498    |
+
+The method has the highest test error rate is the boosted tree model, which perform poorly for our dataset. The method has the lowest test error rate is logistic regression, which will be our final choice for our dataset. The second low test error rate is random forest, which also perform well since it emphasizes feature selection which focus on certain features like GoldDiff and ExperienceDiff (which are proved to be important in the models) as more important than others. However, random forest perform better when there are more categorical variables, our dataset has a higher percentage of numberic variables. Logistic regression should still be the best model.
+
+We then focus our eye on the logistic regression model. By observing the p-value table below, we can clearly see that blueDragons, blueGoldDiff, blueExperienceDiff are three variables affect the win rate of blue team the most. In addition to the goldDiff and experienceDiff we mentioned before, the blueDragon, which only appears once in the first ten minutes, can greatly improve the strength of the whole team if they can kill it. So, blueDragon is also important. 
+
+|           Variables          |Pr(>$|z|$)|
+| :--------------------------- | -------: |
+|        blueWardsPlaced       |   0.210  |   
+|      blueWardsDestroyed      |   0.568  |   
+|        blueFirstBlood        |   0.117  |   
+|          blueKills           |   0.359  |   
+|         blueAssists          |   0.287  |   
+|         blueDragons          |  < 2e-16 |
+|         blueHeralds          |   0.903  |
+|      blueTowersDestroyed     |   0.153  |
+|         blueTotalGold        |   0.136  |
+|      blueTotalExperience     |   0.780  |
+|    blueTotalMinionsKilled    |   0.220  |
+| blueTotalJungleMinionsKilled |   0.498  |
+|         blueGoldDiff         |  < 2e-16 |
+|      blueExperienceDiff      | 2.74e-09 |
+
+## Interesting things and Further Study ##
+It is interesting to see that killing enemies (which is the KDA) does not affect much on the direction of the whole game. Since the dataset used in research collect data from games of the top "High-Elo players" who are really familiar with the games. They have consistent tactics, big picture of the overall situation ,and usually fight with similar players due to the ranking mechanism of LOL. The result of this study is more suitable for high-rank games. For the further study, it is more helpful and interesting to add data from lower-rank games to see how the influential factors change or not in a broader game environment.
+
+## Overall conclusion ##
+
+In conclusion, the study of the league of legends diamond rank game data provide the interaction of win rate for blue team with several influential variables, resulting in an interesting outcome for diamond rank game players to predict the direction of wining during the game.
+
+# Reference #
+1. Figure is from [https://en.wikipedia.org/wiki/League_of_Legends] 
+2. Introduction is from [https://www.leagueoflegends.com/en-us/how-to-play/]
+3. Data set is from [https://www.kaggle.com/bobbyscience/league-of-legends-diamond-ranked-games-10-min]
+4. The introduction video of League of Legends is from [https://www.youtube.com/watch?v=BGtROJeMPeE]
+5. Lecture slides and labs.
